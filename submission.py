@@ -360,6 +360,8 @@ class Node:
 
         # Build UTXO set from the chain
         utxos = self.build_utxo_set(chain)
+        seen_utxos = set()  # Keep track of already used UTXOs to detect double spend within the same transaction
+
 
         # Step 1(b): Validate each input
         if not tx.inputs:
@@ -368,10 +370,15 @@ class Node:
 
         # Collect public keys from inputs to verify they are the same
         input_pub_keys = set()
-
+        
         for tx_input in tx.inputs:
-            input_id = tx_input.output.to_bytes().hex()
+            input_id = f"{tx_input.number}:{tx_input.output.to_bytes().hex()}"
 
+            # Check if input has already been seen (i.e., double spend within the same transaction)
+            if input_id in seen_utxos:
+                print(f"Input {input_id} is being used more than once within the same transaction.")
+                return False
+            seen_utxos.add(input_id)
             # (i) Check if the input exists on the blockchain
             if input_id not in utxos:
                 print(f"Input {input_id} does not exist or has been spent.")
@@ -383,6 +390,8 @@ class Node:
             # (iii) Check if all inputs have the same public key
             output = utxos[input_id]
             input_pub_keys.add(output.pub_key)
+            # del utxos[input_id]
+            
 
         if len(input_pub_keys) != 1:
             print("All inputs must have the same public key.")
@@ -394,7 +403,7 @@ class Node:
             return False
 
         # Step 1(c): Check that the sum of input and output values are equal
-        input_value = sum([utxos[tx_input.output.to_bytes().hex()].value for tx_input in tx.inputs])
+        input_value = sum([utxos[f"{tx_input.number}:{tx_input.output.to_bytes().hex()}"].value for tx_input in tx.inputs])
         output_value = sum([output.value for output in tx.outputs])
 
         if input_value != output_value:
@@ -412,12 +421,12 @@ class Node:
 
             # Remove spent outputs
             for tx_input in tx.inputs:
-                spent_outputs.add(tx_input.output)
-                utxos.pop(tx_input.output.to_bytes().hex(), None)
+                spent_outputs.add(f"{tx_input.number}:{tx_input.output}")
+                utxos.pop(f"{tx_input.number}:{tx_input.output.to_bytes().hex()}", None)
 
             # Add new outputs
             for output in tx.outputs:
-                utxo_id = output.to_bytes().hex()
+                utxo_id = f"{tx.number}:{output.to_bytes().hex()}"
                 if output not in spent_outputs:
                     utxos[utxo_id] = output
 
